@@ -1,28 +1,72 @@
 import 'package:flutter/foundation.dart';
 import '../models/time_block.dart';
 import '../services/database_helper.dart';
+import '../services/preferences_service.dart'; // Add this import
 
 class TimeBlockProvider with ChangeNotifier {
   List<TimeBlock> _timeBlocks = [];
   List<Person> _persons = [];
   final DatabaseHelper _databaseHelper = DatabaseHelper();
+  final PreferencesService _preferencesService = PreferencesService(); // Add this
+  
   String _currentDay = 'الإثنين';
-  int _currentPersonId = 1; // Default to first person
+  int _currentPersonId = 1;
 
   List<TimeBlock> get timeBlocks => _timeBlocks;
   List<Person> get persons => _persons;
   String get currentDay => _currentDay;
   int get currentPersonId => _currentPersonId;
 
-  // Set current day and load relevant time blocks
+  // Initialize with saved preferences
+  Future<void> initialize() async {
+    await loadPersons();
+    await _loadSavedPreferences();
+  }
+
+  // Load saved preferences
+  Future<void> _loadSavedPreferences() async {
+    try {
+      // Load saved day
+      final savedDay = await _preferencesService.getLastDay();
+      if (savedDay != null) {
+        _currentDay = savedDay;
+      }
+
+      // Load saved person
+      final savedPersonId = await _preferencesService.getLastPersonId();
+      if (savedPersonId != null && _persons.any((p) => p.id == savedPersonId)) {
+        _currentPersonId = savedPersonId;
+      } else if (_persons.isNotEmpty) {
+        // Fallback to first person if saved person doesn't exist
+        _currentPersonId = _persons.first.id!;
+      }
+
+      // Load time blocks for the saved day and person
+      await loadTimeBlocksByDayAndPerson(_currentDay, _currentPersonId);
+      
+      notifyListeners();
+    } catch (e) {
+      print('Error loading preferences: $e');
+      // Fallback to default values
+      if (_persons.isNotEmpty) {
+        _currentPersonId = _persons.first.id!;
+        await loadTimeBlocksByDayAndPerson(_currentDay, _currentPersonId);
+      }
+    }
+  }
+
+  // Set current day and save to preferences
   void setCurrentDay(String day) {
     _currentDay = day;
+    _preferencesService.saveLastDay(day);
     loadTimeBlocksByDayAndPerson(day, _currentPersonId);
   }
 
-  // Set current person and load their time blocks
+  // Set current person and save to preferences
   void setCurrentPerson(int personId) {
+    final person = _persons.firstWhere((p) => p.id == personId);
     _currentPersonId = personId;
+    _preferencesService.saveLastPerson(personId, person.name);
     loadTimeBlocksByDayAndPerson(_currentDay, personId);
   }
 
@@ -32,12 +76,12 @@ class TimeBlockProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // Rest of your existing methods remain the same...
   Future<void> loadTimeBlocks() async {
     _timeBlocks = await _databaseHelper.getTimeBlocks();
     notifyListeners();
   }
 
-  // Load time blocks for specific day and person
   Future<void> loadTimeBlocksByDayAndPerson(String day, int personId) async {
     _timeBlocks = await _databaseHelper.getTimeBlocksByDayAndPerson(day, personId);
     notifyListeners();
@@ -57,7 +101,7 @@ class TimeBlockProvider with ChangeNotifier {
   Future<void> deletePerson(int personId) async {
     await _databaseHelper.deletePerson(personId);
     await loadPersons();
-    // If current person was deleted, switch to first person
+    // If current person was deleted, switch to first person and save
     if (_currentPersonId == personId && _persons.isNotEmpty) {
       setCurrentPerson(_persons.first.id!);
     }
@@ -67,7 +111,6 @@ class TimeBlockProvider with ChangeNotifier {
   Future<void> addTimeBlock(TimeBlock timeBlock) async {
     final timeBlockId = await _databaseHelper.insertTimeBlock(timeBlock);
     
-    // Add action items
     for (var actionItem in timeBlock.actionItems) {
       await _databaseHelper.insertActionItem(
         ActionItem(
@@ -106,6 +149,10 @@ class TimeBlockProvider with ChangeNotifier {
     await _databaseHelper.clearDatabase();
     _timeBlocks = [];
     await loadPersons();
+    // Reset to first person after clearing
+    if (_persons.isNotEmpty) {
+      setCurrentPerson(_persons.first.id!);
+    }
     notifyListeners();
   }
 }

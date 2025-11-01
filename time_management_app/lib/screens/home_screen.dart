@@ -24,28 +24,49 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     'الأحد'
   ];
 
+  bool _isInitialized = false;
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _days.length, vsync: this);
-    _tabController.addListener(_onTabChanged);
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final provider = Provider.of<TimeBlockProvider>(context, listen: false);
-      provider.loadPersons().then((_) {
-        provider.setCurrentDay(_days[_tabController.index]);
-      });
+      _initializeApp();
+    });
+  }
+
+  Future<void> _initializeApp() async {
+    final provider = Provider.of<TimeBlockProvider>(context, listen: false);
+    
+    // Initialize the provider (this will load saved preferences)
+    await provider.initialize();
+    
+    // Get the current day from provider and set tab controller
+    final currentDay = provider.currentDay;
+    final initialTabIndex = _days.indexOf(currentDay);
+    
+    _tabController = TabController(
+      length: _days.length,
+      vsync: this,
+      initialIndex: initialTabIndex >= 0 ? initialTabIndex : 0,
+    );
+    
+    _tabController.addListener(_onTabChanged);
+    
+    setState(() {
+      _isInitialized = true;
     });
   }
 
   void _onTabChanged() {
-    if (_tabController.indexIsChanging) {
+    if (_tabController.indexIsChanging && _isInitialized) {
       final newDay = _days[_tabController.index];
       Provider.of<TimeBlockProvider>(context, listen: false)
           .setCurrentDay(newDay);
     }
   }
 
+  // Rest of your existing methods remain the same...
   void _showPersonSelectionDialog(BuildContext context) {
     final provider = Provider.of<TimeBlockProvider>(context, listen: false);
     showDialog(
@@ -139,6 +160,21 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
 
   @override
   Widget build(BuildContext context) {
+    if (!_isInitialized) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('جاري تحميل التطبيق...'),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Consumer<TimeBlockProvider>(
       builder: (context, provider, child) {
         final currentPerson = provider.persons.firstWhere(
