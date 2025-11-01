@@ -223,7 +223,7 @@ class AddTimeBlockScreenState extends State<AddTimeBlockScreen> {
             children: [
               // Day Selection
               DropdownButtonFormField<String>(
-                value: _selectedDay,
+                initialValue: _selectedDay,
                 decoration: InputDecoration(
                   labelText: 'اليوم',
                   border: OutlineInputBorder(),
@@ -418,8 +418,8 @@ class AddTimeBlockScreenState extends State<AddTimeBlockScreen> {
                           SizedBox(width: 8),
                           FloatingActionButton.small(
                             onPressed: _addActionItem,
-                            child: Icon(Icons.add),
                             tooltip: 'إضافة بند عمل',
+                            child: Icon(Icons.add),
                           ),
                         ],
                       ),
@@ -466,7 +466,7 @@ class AddTimeBlockScreenState extends State<AddTimeBlockScreen> {
                             contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                           ),
                         );
-                      }).toList(),
+                      }),
 
                       // Empty State for Action Items
                       if (_actionItems.isEmpty) ...[
