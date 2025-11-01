@@ -31,8 +31,10 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     _tabController.addListener(_onTabChanged);
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<TimeBlockProvider>(context, listen: false)
-          .setCurrentDay(_days[_tabController.index]);
+      final provider = Provider.of<TimeBlockProvider>(context, listen: false);
+      provider.loadPersons().then((_) {
+        provider.setCurrentDay(_days[_tabController.index]);
+      });
     });
   }
 
@@ -42,6 +44,61 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
       Provider.of<TimeBlockProvider>(context, listen: false)
           .setCurrentDay(newDay);
     }
+  }
+
+  void _showPersonSelectionDialog(BuildContext context) {
+    final provider = Provider.of<TimeBlockProvider>(context, listen: false);
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('اختر الشخص'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: provider.persons.length,
+              itemBuilder: (context, index) {
+                final person = provider.persons[index];
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: _parseColor(person.color ?? 'FF4285F4'),
+                    child: Text(
+                      person.name[0],
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+                  title: Text(person.name),
+                  trailing: provider.currentPersonId == person.id
+                      ? Icon(Icons.check, color: Colors.green)
+                      : null,
+                  onTap: () {
+                    provider.setCurrentPerson(person.id!);
+                    Navigator.of(context).pop();
+                  },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              child: Text('إغلاق'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Color _parseColor(String hexColor) {
+    hexColor = hexColor.replaceAll("#", "");
+    if (hexColor.length == 6) {
+      hexColor = "FF" + hexColor;
+    }
+    return Color(int.parse(hexColor, radix: 16));
   }
 
   void _showClearDatabaseDialog(BuildContext context) {
@@ -82,48 +139,71 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('إدارة الوقت الشخصي'),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.delete_sweep),
-            onPressed: () => _showClearDatabaseDialog(context),
-            tooltip: 'مسح جميع البيانات',
+    return Consumer<TimeBlockProvider>(
+      builder: (context, provider, child) {
+        final currentPerson = provider.persons.firstWhere(
+          (person) => person.id == provider.currentPersonId,
+          orElse: () => Person(id: 1, name: 'الأب', color: 'FF4285F4'),
+        );
+
+        return Scaffold(
+          appBar: AppBar(
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('إدارة الوقت العائلي'),
+                Text(
+                  currentPerson.name,
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.normal),
+                ),
+              ],
+            ),
+            actions: [
+              IconButton(
+                icon: Icon(Icons.people),
+                onPressed: () => _showPersonSelectionDialog(context),
+                tooltip: 'تغيير الشخص',
+              ),
+              IconButton(
+                icon: Icon(Icons.delete_sweep),
+                onPressed: () => _showClearDatabaseDialog(context),
+                tooltip: 'مسح جميع البيانات',
+              ),
+              IconButton(
+                icon: Icon(Icons.add),
+                onPressed: () {
+                  _showAddTimeBlockDialog(context, currentPerson);
+                },
+              ),
+            ],
+            bottom: TabBar(
+              controller: _tabController,
+              isScrollable: true,
+              tabs: _days.map((day) => Tab(text: day)).toList(),
+            ),
           ),
-          IconButton(
-            icon: Icon(Icons.add),
+          body: TabBarView(
+            controller: _tabController,
+            children: _days.map((day) {
+              return _buildDayTab(day, currentPerson);
+            }).toList(),
+          ),
+          floatingActionButton: FloatingActionButton(
             onPressed: () {
-              _showAddTimeBlockDialog(context);
+              _showAddTimeBlockDialog(context, currentPerson);
             },
+            child: Icon(Icons.add),
           ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          tabs: _days.map((day) => Tab(text: day)).toList(),
-        ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: _days.map((day) {
-          return _buildDayTab(day);
-        }).toList(),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          _showAddTimeBlockDialog(context);
-        },
-        child: Icon(Icons.add),
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildDayTab(String day) {
+  Widget _buildDayTab(String day, Person currentPerson) {
     return Consumer<TimeBlockProvider>(
       builder: (context, provider, child) {
         final dayTimeBlocks = provider.timeBlocks
-            .where((block) => block.dayOfWeek == day)
+            .where((block) => block.dayOfWeek == day && block.personId == currentPerson.id)
             .toList();
 
         if (dayTimeBlocks.isEmpty) {
@@ -137,6 +217,12 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                   'لا توجد فترات زمنية لـ $day',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 18, color: Colors.grey),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'لـ ${currentPerson.name}',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: Colors.grey),
                 ),
                 SizedBox(height: 8),
                 Text(
@@ -184,12 +270,15 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     );
   }
 
-  void _showAddTimeBlockDialog(BuildContext context) {
+  void _showAddTimeBlockDialog(BuildContext context, Person currentPerson) {
     final currentDay = _days[_tabController.index];
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => AddTimeBlockScreen(selectedDay: currentDay),
+        builder: (context) => AddTimeBlockScreen(
+          selectedDay: currentDay,
+          selectedPerson: currentPerson,
+        ),
       ),
     );
   }

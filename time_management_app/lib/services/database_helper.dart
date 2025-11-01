@@ -19,13 +19,22 @@ class DatabaseHelper {
     String path = join(await getDatabasesPath(), 'time_management.db');
     return await openDatabase(
       path,
-      version: 2, // Increment version
+      version: 1, // Start fresh with version 1
       onCreate: _createTables,
-      onUpgrade: _upgradeDatabase, // Add upgrade handler
     );
   }
 
   Future<void> _createTables(Database db, int version) async {
+    // Persons table
+    await db.execute('''
+      CREATE TABLE persons(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        color TEXT
+      )
+    ''');
+
+    // Time blocks table
     await db.execute('''
       CREATE TABLE time_blocks(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,10 +44,13 @@ class DatabaseHelper {
         endTime INTEGER NOT NULL,
         category TEXT NOT NULL,
         isCompleted INTEGER NOT NULL,
-        dayOfWeek TEXT NOT NULL
+        dayOfWeek TEXT NOT NULL,
+        personId INTEGER NOT NULL,
+        FOREIGN KEY(personId) REFERENCES persons(id) ON DELETE CASCADE
       )
     ''');
 
+    // Action items table
     await db.execute('''
       CREATE TABLE action_items(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,23 +60,58 @@ class DatabaseHelper {
         FOREIGN KEY(timeBlockId) REFERENCES time_blocks(id) ON DELETE CASCADE
       )
     ''');
+
+    // Insert default persons
+    await _insertDefaultPersons(db);
   }
 
-  // Handle database upgrade
-  Future<void> _upgradeDatabase(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) {
-      // Add dayOfWeek column to existing table
-      await db.execute('''
-        ALTER TABLE time_blocks ADD COLUMN dayOfWeek TEXT NOT NULL DEFAULT 'الإثنين'
-      ''');
+  Future<void> _insertDefaultPersons(Database db) async {
+    final defaultPersons = [
+      {'name': 'هاني', 'color': 'FF4285F4'},
+      {'name': 'آلاء', 'color': 'FFEA4335'},
+      {'name': 'يحيى', 'color': 'FF34A853'},
+      {'name': 'ابراهيم', 'color': 'FFFBBC05'},
+      {'name': 'فاطمة', 'color': 'FF9C27B0'},
+      {'name': 'أحمد', 'color': 'FFFF5722'},
+    ];
+
+    for (var person in defaultPersons) {
+      await db.insert('persons', {
+        'name': person['name'],
+        'color': person['color'],
+      });
     }
   }
 
-  // Clear entire database
-  Future<void> clearDatabase() async {
+  // Person operations
+  Future<int> insertPerson(Person person) async {
     final db = await database;
-    await db.delete('action_items');
-    await db.delete('time_blocks');
+    return await db.insert('persons', _personToMap(person));
+  }
+
+  Future<List<Person>> getPersons() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query('persons');
+    return maps.map((map) => _personFromMap(map)).toList();
+  }
+
+  Future<int> updatePerson(Person person) async {
+    final db = await database;
+    return await db.update(
+      'persons',
+      _personToMap(person),
+      where: 'id = ?',
+      whereArgs: [person.id],
+    );
+  }
+
+  Future<int> deletePerson(int id) async {
+    final db = await database;
+    return await db.delete(
+      'persons',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   // TimeBlock operations
@@ -86,7 +133,25 @@ class DatabaseHelper {
     return timeBlocks;
   }
 
-  // Get time blocks by day
+  // Get time blocks by day and person
+  Future<List<TimeBlock>> getTimeBlocksByDayAndPerson(String dayOfWeek, int personId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'time_blocks',
+      where: 'dayOfWeek = ? AND personId = ?',
+      whereArgs: [dayOfWeek, personId],
+    );
+    
+    List<TimeBlock> timeBlocks = [];
+    for (var map in maps) {
+      final actionItems = await getActionItemsForTimeBlock(map['id']);
+      timeBlocks.add(_timeBlockFromMap(map, actionItems));
+    }
+    
+    return timeBlocks;
+  }
+
+  // Get all time blocks for a specific day across all persons
   Future<List<TimeBlock>> getTimeBlocksByDay(String dayOfWeek) async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
@@ -104,46 +169,7 @@ class DatabaseHelper {
     return timeBlocks;
   }
 
-  Future<TimeBlock?> getTimeBlock(int id) async {
-    final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'time_blocks',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    
-    if (maps.isNotEmpty) {
-      final actionItems = await getActionItemsForTimeBlock(id);
-      return _timeBlockFromMap(maps.first, actionItems);
-    }
-    return null;
-  }
-
-  Future<int> updateTimeBlock(TimeBlock timeBlock) async {
-    final db = await database;
-    return await db.update(
-      'time_blocks',
-      _timeBlockToMap(timeBlock),
-      where: 'id = ?',
-      whereArgs: [timeBlock.id],
-    );
-  }
-
-  Future<int> deleteTimeBlock(int id) async {
-    final db = await database;
-    // First delete associated action items
-    await db.delete(
-      'action_items',
-      where: 'timeBlockId = ?',
-      whereArgs: [id],
-    );
-    // Then delete the time block
-    return await db.delete(
-      'time_blocks',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
+  // Rest of the methods remain similar but with updated mappings...
 
   // ActionItem operations
   Future<int> insertActionItem(ActionItem actionItem) async {
@@ -181,6 +207,20 @@ class DatabaseHelper {
     );
   }
 
+  Future<int> deleteTimeBlock(int id) async {
+    final db = await database;
+    await db.delete(
+      'action_items',
+      where: 'timeBlockId = ?',
+      whereArgs: [id],
+    );
+    return await db.delete(
+      'time_blocks',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   Future<int> deleteActionItem(int id) async {
     final db = await database;
     return await db.delete(
@@ -190,7 +230,33 @@ class DatabaseHelper {
     );
   }
 
+  // Clear entire database
+  Future<void> clearDatabase() async {
+    final db = await database;
+    await db.delete('action_items');
+    await db.delete('time_blocks');
+    await db.delete('persons');
+    // Reinsert default persons after clearing
+    await _insertDefaultPersons(db);
+  }
+
   // Helper methods for conversion
+  Map<String, dynamic> _personToMap(Person person) {
+    return {
+      'id': person.id,
+      'name': person.name,
+      'color': person.color,
+    };
+  }
+
+  Person _personFromMap(Map<String, dynamic> map) {
+    return Person(
+      id: map['id'],
+      name: map['name'],
+      color: map['color'],
+    );
+  }
+
   Map<String, dynamic> _timeBlockToMap(TimeBlock timeBlock) {
     return {
       'id': timeBlock.id,
@@ -201,6 +267,7 @@ class DatabaseHelper {
       'category': timeBlock.category,
       'isCompleted': timeBlock.isCompleted ? 1 : 0,
       'dayOfWeek': timeBlock.dayOfWeek,
+      'personId': timeBlock.personId,
     };
   }
 
@@ -215,6 +282,7 @@ class DatabaseHelper {
       category: map['category'],
       isCompleted: map['isCompleted'] == 1,
       dayOfWeek: map['dayOfWeek'],
+      personId: map['personId'],
     );
   }
 

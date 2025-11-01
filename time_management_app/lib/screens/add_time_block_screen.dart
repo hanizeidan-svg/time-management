@@ -5,8 +5,13 @@ import '../providers/time_block_provider.dart';
 
 class AddTimeBlockScreen extends StatefulWidget {
   final String selectedDay;
+  final Person selectedPerson;
   
-  const AddTimeBlockScreen({super.key, required this.selectedDay});
+  const AddTimeBlockScreen({
+    super.key, 
+    required this.selectedDay,
+    required this.selectedPerson,
+  });
 
   @override
   AddTimeBlockScreenState createState() => AddTimeBlockScreenState();
@@ -123,7 +128,6 @@ class AddTimeBlockScreenState extends State<AddTimeBlockScreen> {
 
   void _saveTimeBlock() {
     if (_formKey.currentState!.validate()) {
-      // Validate time
       if (_endTime.isBefore(_startTime)) {
         _showErrorDialog('خطأ في الوقت', 'وقت الانتهاء يجب أن يكون بعد وقت البدء');
         return;
@@ -137,6 +141,7 @@ class AddTimeBlockScreenState extends State<AddTimeBlockScreen> {
         actionItems: _actionItems,
         category: _categoryController.text.trim(),
         dayOfWeek: _selectedDay,
+        personId: widget.selectedPerson.id!, // Use the selected person
       );
 
       Provider.of<TimeBlockProvider>(context, listen: false)
@@ -242,6 +247,22 @@ class AddTimeBlockScreenState extends State<AddTimeBlockScreen> {
                   }
                   return null;
                 },
+              ),
+              SizedBox(height: 16),
+
+              Card(
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: _parseColor(widget.selectedPerson.color ?? 'FF4285F4'),
+                    child: Text(
+                      widget.selectedPerson.name[0],
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+                  title: Text('الشخص: ${widget.selectedPerson.name}', 
+                            textDirection: TextDirection.rtl),
+                  trailing: Icon(Icons.person, color: Colors.blue),
+                ),
               ),
               SizedBox(height: 16),
 
@@ -523,6 +544,14 @@ class AddTimeBlockScreenState extends State<AddTimeBlockScreen> {
     } else {
       return '$minutes دقيقة';
     }
+  }
+
+  Color _parseColor(String hexColor) {
+    hexColor = hexColor.replaceAll("#", "");
+    if (hexColor.length == 6) {
+      hexColor = 'FF$hexColor';
+    }
+    return Color(int.parse(hexColor, radix: 16));
   }
 
   @override
