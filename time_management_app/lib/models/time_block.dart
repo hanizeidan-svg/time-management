@@ -7,6 +7,7 @@ class TimeBlock {
   final List<ActionItem> actionItems;
   final String category;
   final bool isCompleted;
+  final String dayOfWeek; // New field for day of week
 
   TimeBlock({
     this.id,
@@ -17,6 +18,7 @@ class TimeBlock {
     required this.actionItems,
     required this.category,
     this.isCompleted = false,
+    required this.dayOfWeek, // Add this parameter
   });
 
   TimeBlock copyWith({
@@ -28,6 +30,7 @@ class TimeBlock {
     List<ActionItem>? actionItems,
     String? category,
     bool? isCompleted,
+    String? dayOfWeek,
   }) {
     return TimeBlock(
       id: id ?? this.id,
@@ -38,6 +41,7 @@ class TimeBlock {
       actionItems: actionItems ?? this.actionItems,
       category: category ?? this.category,
       isCompleted: isCompleted ?? this.isCompleted,
+      dayOfWeek: dayOfWeek ?? this.dayOfWeek,
     );
   }
 }

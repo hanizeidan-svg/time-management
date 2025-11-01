@@ -12,13 +12,72 @@ class HomeScreen extends StatefulWidget {
   HomeScreenState createState() => HomeScreenState();
 }
 
-class HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  final List<String> _days = [
+    'الإثنين',
+    'الثلاثاء',
+    'الأربعاء',
+    'الخميس',
+    'الجمعة',
+    'السبت',
+    'الأحد'
+  ];
+
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: _days.length, vsync: this);
+    _tabController.addListener(_onTabChanged);
+    
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<TimeBlockProvider>(context, listen: false).loadTimeBlocks();
+      Provider.of<TimeBlockProvider>(context, listen: false)
+          .setCurrentDay(_days[_tabController.index]);
     });
+  }
+
+  void _onTabChanged() {
+    if (_tabController.indexIsChanging) {
+      final newDay = _days[_tabController.index];
+      Provider.of<TimeBlockProvider>(context, listen: false)
+          .setCurrentDay(newDay);
+    }
+  }
+
+  void _showClearDatabaseDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('مسح جميع البيانات'),
+          content: Text('هل أنت متأكد من أنك تريد مسح جميع البيانات؟ لا يمكن التراجع عن هذا الإجراء.'),
+          actions: [
+            TextButton(
+              child: Text('إلغاء'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: Text('مسح الكل', style: TextStyle(color: Colors.red)),
+              onPressed: () {
+                Provider.of<TimeBlockProvider>(context, listen: false)
+                    .clearAllData()
+                    .then((_) {
+                  Navigator.of(context).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('تم مسح جميع البيانات بنجاح'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                });
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -28,69 +87,109 @@ class HomeScreenState extends State<HomeScreen> {
         title: Text('إدارة الوقت الشخصي'),
         actions: [
           IconButton(
+            icon: Icon(Icons.delete_sweep),
+            onPressed: () => _showClearDatabaseDialog(context),
+            tooltip: 'مسح جميع البيانات',
+          ),
+          IconButton(
             icon: Icon(Icons.add),
             onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => AddTimeBlockScreen()),
-              );
+              _showAddTimeBlockDialog(context);
             },
           ),
         ],
+        bottom: TabBar(
+          controller: _tabController,
+          isScrollable: true,
+          tabs: _days.map((day) => Tab(text: day)).toList(),
+        ),
       ),
-      body: Consumer<TimeBlockProvider>(
-        builder: (context, provider, child) {
-          if (provider.timeBlocks.isEmpty) {
-            return Center(
-              child: Text(
-                'لا توجد فترات زمنية مضافة بعد!\nانقر على + لإنشاء واحدة.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 18, color: Colors.grey),
-              ),
-            );
-          }
-
-          return ListView.builder(
-            itemCount: provider.timeBlocks.length,
-            itemBuilder: (context, index) {
-              final timeBlock = provider.timeBlocks[index];
-              return Dismissible(
-                key: Key(timeBlock.id.toString()),
-                direction: DismissDirection.endToStart,
-                background: Container(
-                  color: Colors.red,
-                  alignment: Alignment.centerRight,
-                  padding: EdgeInsets.only(right: 20.0),
-                  child: Icon(Icons.delete, color: Colors.white),
-                ),
-                confirmDismiss: (direction) async {
-                  return await _showDeleteConfirmationDialog(context, timeBlock);
-                },
-                onDismissed: (direction) {
-                  Provider.of<TimeBlockProvider>(context, listen: false)
-                      .deleteTimeBlock(timeBlock.id!);
-                  
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('تم حذف "${timeBlock.title}"'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                },
-                child: TimeBlockCard(timeBlock: timeBlock),
-              );
-            },
-          );
-        },
+      body: TabBarView(
+        controller: _tabController,
+        children: _days.map((day) {
+          return _buildDayTab(day);
+        }).toList(),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => AddTimeBlockScreen()),
-          );
+          _showAddTimeBlockDialog(context);
         },
         child: Icon(Icons.add),
+      ),
+    );
+  }
+
+  Widget _buildDayTab(String day) {
+    return Consumer<TimeBlockProvider>(
+      builder: (context, provider, child) {
+        final dayTimeBlocks = provider.timeBlocks
+            .where((block) => block.dayOfWeek == day)
+            .toList();
+
+        if (dayTimeBlocks.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.schedule, size: 64, color: Colors.grey),
+                SizedBox(height: 16),
+                Text(
+                  'لا توجد فترات زمنية لـ $day',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 18, color: Colors.grey),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'انقر على + لإضافة فترة زمنية',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: Colors.grey),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          itemCount: dayTimeBlocks.length,
+          itemBuilder: (context, index) {
+            final timeBlock = dayTimeBlocks[index];
+            return Dismissible(
+              key: Key(timeBlock.id.toString()),
+              direction: DismissDirection.endToStart,
+              background: Container(
+                color: Colors.red,
+                alignment: Alignment.centerRight,
+                padding: EdgeInsets.only(right: 20.0),
+                child: Icon(Icons.delete, color: Colors.white),
+              ),
+              confirmDismiss: (direction) async {
+                return await _showDeleteConfirmationDialog(context, timeBlock);
+              },
+              onDismissed: (direction) {
+                Provider.of<TimeBlockProvider>(context, listen: false)
+                    .deleteTimeBlock(timeBlock.id!);
+                
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('تم حذف "${timeBlock.title}"'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              },
+              child: TimeBlockCard(timeBlock: timeBlock),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showAddTimeBlockDialog(BuildContext context) {
+    final currentDay = _days[_tabController.index];
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddTimeBlockScreen(selectedDay: currentDay),
       ),
     );
   }
@@ -120,5 +219,11 @@ class HomeScreenState extends State<HomeScreen> {
       },
     );
     return result ?? false;
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 }

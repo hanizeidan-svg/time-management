@@ -5,11 +5,25 @@ import '../services/database_helper.dart';
 class TimeBlockProvider with ChangeNotifier {
   List<TimeBlock> _timeBlocks = [];
   final DatabaseHelper _databaseHelper = DatabaseHelper();
+  String _currentDay = 'الإثنين'; // Default day
 
   List<TimeBlock> get timeBlocks => _timeBlocks;
+  String get currentDay => _currentDay;
+
+  // Set current day and load relevant time blocks
+  void setCurrentDay(String day) {
+    _currentDay = day;
+    loadTimeBlocksByDay(day);
+  }
 
   Future<void> loadTimeBlocks() async {
     _timeBlocks = await _databaseHelper.getTimeBlocks();
+    notifyListeners();
+  }
+
+  // Load time blocks for specific day
+  Future<void> loadTimeBlocksByDay(String day) async {
+    _timeBlocks = await _databaseHelper.getTimeBlocksByDay(day);
     notifyListeners();
   }
 
@@ -27,28 +41,33 @@ class TimeBlockProvider with ChangeNotifier {
       );
     }
     
-    await loadTimeBlocks(); // Reload to get the complete data with IDs
+    await loadTimeBlocksByDay(timeBlock.dayOfWeek); // Reload current day
   }
 
   Future<void> toggleActionItem(int timeBlockId, int actionItemId, bool isCompleted) async {
     await _databaseHelper.updateActionItemCompletion(actionItemId, isCompleted);
-    await loadTimeBlocks(); // Reload to get updated data
+    await loadTimeBlocksByDay(_currentDay); // Reload current day
   }
 
   Future<void> toggleTimeBlockCompletion(int timeBlockId, bool isCompleted) async {
     await _databaseHelper.updateTimeBlockCompletion(timeBlockId, isCompleted);
-    await loadTimeBlocks();
+    await loadTimeBlocksByDay(_currentDay); // Reload current day
   }
 
-  // Add this method to delete time blocks
   Future<void> deleteTimeBlock(int timeBlockId) async {
     await _databaseHelper.deleteTimeBlock(timeBlockId);
-    await loadTimeBlocks(); // Reload to refresh the list
+    await loadTimeBlocksByDay(_currentDay); // Reload current day
   }
 
-  // Add this method to delete action items
   Future<void> deleteActionItem(int actionItemId) async {
     await _databaseHelper.deleteActionItem(actionItemId);
-    await loadTimeBlocks(); // Reload to refresh the list
+    await loadTimeBlocksByDay(_currentDay); // Reload current day
+  }
+
+  // Clear entire database
+  Future<void> clearAllData() async {
+    await _databaseHelper.clearDatabase();
+    _timeBlocks = [];
+    notifyListeners();
   }
 }

@@ -19,8 +19,9 @@ class DatabaseHelper {
     String path = join(await getDatabasesPath(), 'time_management.db');
     return await openDatabase(
       path,
-      version: 1,
+      version: 2, // Increment version
       onCreate: _createTables,
+      onUpgrade: _upgradeDatabase, // Add upgrade handler
     );
   }
 
@@ -33,7 +34,8 @@ class DatabaseHelper {
         startTime INTEGER NOT NULL,
         endTime INTEGER NOT NULL,
         category TEXT NOT NULL,
-        isCompleted INTEGER NOT NULL
+        isCompleted INTEGER NOT NULL,
+        dayOfWeek TEXT NOT NULL
       )
     ''');
 
@@ -48,6 +50,23 @@ class DatabaseHelper {
     ''');
   }
 
+  // Handle database upgrade
+  Future<void> _upgradeDatabase(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // Add dayOfWeek column to existing table
+      await db.execute('''
+        ALTER TABLE time_blocks ADD COLUMN dayOfWeek TEXT NOT NULL DEFAULT 'الإثنين'
+      ''');
+    }
+  }
+
+  // Clear entire database
+  Future<void> clearDatabase() async {
+    final db = await database;
+    await db.delete('action_items');
+    await db.delete('time_blocks');
+  }
+
   // TimeBlock operations
   Future<int> insertTimeBlock(TimeBlock timeBlock) async {
     final db = await database;
@@ -57,6 +76,24 @@ class DatabaseHelper {
   Future<List<TimeBlock>> getTimeBlocks() async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query('time_blocks');
+    
+    List<TimeBlock> timeBlocks = [];
+    for (var map in maps) {
+      final actionItems = await getActionItemsForTimeBlock(map['id']);
+      timeBlocks.add(_timeBlockFromMap(map, actionItems));
+    }
+    
+    return timeBlocks;
+  }
+
+  // Get time blocks by day
+  Future<List<TimeBlock>> getTimeBlocksByDay(String dayOfWeek) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'time_blocks',
+      where: 'dayOfWeek = ?',
+      whereArgs: [dayOfWeek],
+    );
     
     List<TimeBlock> timeBlocks = [];
     for (var map in maps) {
@@ -163,6 +200,7 @@ class DatabaseHelper {
       'endTime': timeBlock.endTime.millisecondsSinceEpoch,
       'category': timeBlock.category,
       'isCompleted': timeBlock.isCompleted ? 1 : 0,
+      'dayOfWeek': timeBlock.dayOfWeek,
     };
   }
 
@@ -176,6 +214,7 @@ class DatabaseHelper {
       actionItems: actionItems,
       category: map['category'],
       isCompleted: map['isCompleted'] == 1,
+      dayOfWeek: map['dayOfWeek'],
     );
   }
 
